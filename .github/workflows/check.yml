@@ -2,9 +2,8 @@ name: Tjek Viggo indbakke
 
 on:
   schedule:
-    # Kører hver dag kl. 07:00 dansk tid (06:00 UTC)
     - cron: "0 6 * * *"
-  workflow_dispatch: # Gør det muligt at køre manuelt
+  workflow_dispatch:
 
 jobs:
   check:
@@ -28,7 +27,7 @@ jobs:
 
       - name: Installer pakker
         run: |
-          pip install -r requirements.txt
+          pip install -r viggo-checker/requirements.txt
           playwright install chromium --with-deps
 
       - name: Kør checker
@@ -38,4 +37,4 @@ jobs:
           GMAIL_SENDER:        ${{ secrets.GMAIL_SENDER }}
           GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
           GMAIL_RECEIVER:      ${{ secrets.GMAIL_RECEIVER }}
-        run: python checker.py
+        run: python viggo-checker/checker.py
