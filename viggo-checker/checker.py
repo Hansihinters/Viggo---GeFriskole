@@ -1,11 +1,11 @@
 import os
 import json
 import smtplib
+import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from playwright.sync_api import sync_playwright
 
-VIGGO_URL      = "https://gefriskole.viggo.dk"
+VIGGO_BASE     = "https://gefriskole.viggo.dk"
 VIGGO_USERNAME = os.environ["VIGGO_USERNAME"]
 VIGGO_PASSWORD = os.environ["VIGGO_PASSWORD"]
 GMAIL_SENDER   = os.environ["GMAIL_SENDER"]
@@ -33,7 +33,7 @@ def send_mail(messages):
         body_lines.append(f"  Fra: {m['sender']}")
         body_lines.append(f"  Emne: {m['subject']}")
         body_lines.append(f"  Dato: {m['date']}\n")
-    body_lines.append(f"\nLæs dem her: {VIGGO_URL}/Basic/Message/Inbox")
+    body_lines.append(f"\nLæs dem her: {VIGGO_BASE}/Basic/Message/Inbox")
 
     msg = MIMEMultipart()
     msg["From"]    = GMAIL_SENDER
@@ -47,63 +47,107 @@ def send_mail(messages):
     print(f"Mail sendt: {subject}")
 
 
-def scrape_inbox():
+def get_session():
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    })
+
+    r = session.get(f"{VIGGO_BASE}/Basic/Account/Login")
+    r.raise_for_status()
+
+    token = ""
+    for line in r.text.splitlines():
+        if "__RequestVerificationToken" in line and 'value="' in line:
+            token = line.split('value="')[1].split('"')[0]
+            break
+
+    payload = {
+        "UserName": VIGGO_USERNAME,
+        "Password": VIGGO_PASSWORD,
+        "returnUrl": "",
+        "__RequestVerificationToken": token,
+    }
+    r2 = session.post(
+        f"{VIGGO_BASE}/Basic/Account/Login",
+        data=payload,
+        allow_redirects=True,
+    )
+
+    if "/Account/Login" in r2.url:
+        raise Exception("Login fejlede — tjek VIGGO_USERNAME og VIGGO_PASSWORD i GitHub Secrets")
+
+    print(f"Login OK — landet på: {r2.url}")
+    return session
+
+
+def scrape_inbox(session):
+    from html.parser import HTMLParser
+
+    r = session.get(f"{VIGGO_BASE}/Basic/Message/Inbox")
+    r.raise_for_status()
+
     messages = []
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
 
-        page.goto(f"{VIGGO_URL}/Account/Login", wait_until="networkidle")
-        page.fill('input[name="UserName"]', VIGGO_USERNAME)
-        page.fill('input[name="Password"]', VIGGO_PASSWORD)
-        page.click('button[type="submit"], input[type="submit"]')
-        page.wait_for_load_state("networkidle")
+    class InboxParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.in_row = False
+            self.current_row_id = None
+            self.cells = []
+            self.current_cell = None
 
-        if "/Account/Login" in page.url:
-            raise Exception("Login fejlede — tjek dine loginoplysninger i GitHub Secrets")
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == "tr":
+                row_id = attrs.get("data-id") or attrs.get("id") or ""
+                if row_id or "message" in attrs.get("class", "").lower():
+                    self.in_row = True
+                    self.current_row_id = row_id
+                    self.cells = []
+            if self.in_row and tag == "td":
+                self.current_cell = ""
 
-        page.goto(f"{VIGGO_URL}/Basic/Message/Inbox", wait_until="networkidle")
+        def handle_endtag(self, tag):
+            if self.in_row and tag == "td" and self.current_cell is not None:
+                self.cells.append(self.current_cell.strip())
+                self.current_cell = None
+            if tag == "tr" and self.in_row:
+                self.in_row = False
+                if len(self.cells) >= 2:
+                    msg_id  = self.current_row_id or self.cells[1]
+                    sender  = self.cells[0] if len(self.cells) > 0 else "Ukendt"
+                    subject = self.cells[1] if len(self.cells) > 1 else "(intet emne)"
+                    date    = self.cells[2] if len(self.cells) > 2 else "Ukendt dato"
+                    if msg_id or subject:
+                        messages.append({
+                            "id":      msg_id,
+                            "sender":  sender,
+                            "subject": subject,
+                            "date":    date,
+                        })
 
-        rows = page.query_selector_all("tr.message-row, .message-list-item, tr[data-id]")
-        if not rows:
-            rows = page.query_selector_all("table tbody tr")
+        def handle_data(self, data):
+            if self.current_cell is not None:
+                self.current_cell += data
 
-        for row in rows:
-            msg_id  = row.get_attribute("data-id") or row.get_attribute("id") or ""
-            sender  = ""
-            subject = ""
-            date    = ""
-
-            cells = row.query_selector_all("td")
-            if len(cells) >= 3:
-                sender  = cells[0].inner_text().strip()
-                subject = cells[1].inner_text().strip()
-                date    = cells[2].inner_text().strip()
-            elif len(cells) >= 2:
-                sender  = cells[0].inner_text().strip()
-                subject = cells[1].inner_text().strip()
-
-            if msg_id or subject:
-                messages.append({
-                    "id":      msg_id or subject,
-                    "sender":  sender  or "Ukendt",
-                    "subject": subject or "(intet emne)",
-                    "date":    date    or "Ukendt dato",
-                })
-
-        browser.close()
+    parser = InboxParser()
+    parser.feed(r.text)
     return messages
 
 
 def main():
     print("Tjekker Viggo indbakke...")
     seen = load_seen()
-    all_messages = scrape_inbox()
+    session = get_session()
+    all_messages = scrape_inbox(session)
+    print(f"Fandt {len(all_messages)} beskeder i alt")
 
     new_messages = [m for m in all_messages if m["id"] not in seen]
 
     if new_messages:
-        print(f"Fandt {len(new_messages)} nye besked(er) — sender mail...")
+        print(f"{len(new_messages)} nye — sender mail...")
         send_mail(new_messages)
         seen.update(m["id"] for m in new_messages)
         save_seen(seen)
