@@ -1,1 +1,41 @@
+name: Tjek Viggo indbakke
 
+on:
+  schedule:
+    # Kører hver dag kl. 07:00 dansk tid (06:00 UTC)
+    - cron: "0 6 * * *"
+  workflow_dispatch: # Gør det muligt at køre manuelt
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Hent kode
+        uses: actions/checkout@v4
+
+      - name: Hent cache af seen_messages.json
+        uses: actions/cache@v4
+        with:
+          path: seen_messages.json
+          key: seen-messages-${{ github.run_id }}
+          restore-keys: seen-messages-
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer pakker
+        run: |
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+
+      - name: Kør checker
+        env:
+          VIGGO_USERNAME:      ${{ secrets.VIGGO_USERNAME }}
+          VIGGO_PASSWORD:      ${{ secrets.VIGGO_PASSWORD }}
+          GMAIL_SENDER:        ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
+          GMAIL_RECEIVER:      ${{ secrets.GMAIL_RECEIVER }}
+        run: python checker.py
