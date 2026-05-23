@@ -26,10 +26,7 @@ jobs:
           python-version: "3.12"
 
       - name: Installer pakker
-        run: |
-          pip install -r viggo-checker/requirements.txt
-          playwright install chromium
-          sudo apt-get install -y libasound2t64
+        run: pip install -r viggo-checker/requirements.txt
 
       - name: Kør checker
         env:
