@@ -74,7 +74,15 @@ def scrape_inbox(session):
     r.raise_for_status()
 
     # DEBUG
-    print(r.text[:3000])
+    html = r.text
+    idx = html.lower().find("inbox")
+    if idx > 0:
+        print("=== INBOX SEKTION ===")
+        print(html[idx:idx+2000])
+    else:
+        print("=== INGEN INBOX FUNDET - printer midten ===")
+        mid = len(html) // 2
+        print(html[mid:mid+2000])
 
     messages = []
 
