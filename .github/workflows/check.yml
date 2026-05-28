@@ -1,39 +1,30 @@
 name: Tjek Viggo indbakke
-
 on:
   schedule:
     - cron: "0 6 * * *"
   workflow_dispatch:
-
 jobs:
   check:
     runs-on: ubuntu-latest
-
     steps:
       - name: Hent kode
         uses: actions/checkout@v4
-
       - name: Hent cache af seen_messages.json
         uses: actions/cache@v4
         with:
           path: seen_messages.json
           key: seen-messages-${{ github.run_id }}
           restore-keys: seen-messages-
-
       - name: Installer Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Installer pakker
         run: pip install -r viggo-checker/requirements.txt
-
       - name: Kør checker
         env:
-  VIGGO_USERNAME:      ${{ secrets.VIGGO_USERNAME }}
-  VIGGO_PASSWORD:      ${{ secrets.VIGGO_PASSWORD }}
-  GMAIL_SENDER:        ${{ secrets.GMAIL_SENDER }}
-  GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
-  GMAIL_RECEIVER:      ${{ secrets.GMAIL_RECEIVER }}
-  VIGGO_COOKIES:       ${{ secrets.VIGGO_COOKIES }}
+          GMAIL_SENDER:        ${{ secrets.GMAIL_SENDER }}
+          GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
+          GMAIL_RECEIVER:      ${{ secrets.GMAIL_RECEIVER }}
+          VIGGO_COOKIES:       ${{ secrets.VIGGO_COOKIES }}
         run: python viggo-checker/checker.py
