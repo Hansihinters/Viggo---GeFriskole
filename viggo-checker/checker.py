@@ -31,7 +31,8 @@ def send_mail(messages):
     for m in messages:
         body_lines.append(f"  Fra: {m['sender']}")
         body_lines.append(f"  Emne: {m['subject']}")
-        body_lines.append(f"  Dato: {m['date']}\n")
+        body_lines.append(f"  Dato: {m['date']}")
+        body_lines.append(f"  Besked: {m['preview']}\n")
     body_lines.append(f"\nLæs dem her: {VIGGO_BASE}/Basic/Message/Inbox")
 
     msg = MIMEMultipart()
@@ -83,11 +84,14 @@ def scrape_inbox(session):
             super().__init__()
             self.in_row = False
             self.current_id = None
-            self.sender = None
-            self.date = None
             self.subject = None
-            self.in_sender = False
-            self.in_date = False
+            self.date = None
+            self.preview = None
+            self.in_small = False
+            self.in_a = False
+            self.div_depth = 0
+            self.texts = []
+            self.current_text = ""
 
         def handle_starttag(self, tag, attrs):
             attrs = dict(attrs)
@@ -96,39 +100,51 @@ def scrape_inbox(session):
                 if drag_id:
                     self.in_row = True
                     self.current_id = drag_id
-                    self.sender = None
+                    self.subject = None
                     self.date = None
-                    self.subject = attrs.get("data-qa", "")
-            if self.in_row and tag == "div":
-                self.in_sender = True
-                self.current_text = ""
-            if self.in_row and tag == "small":
-                self.in_date = True
-                self.current_text = ""
-            if self.in_row and tag == "div":
-                qa = attrs.get("data-qa", "")
-                if qa:
-                    self.subject = qa
+                    self.preview = None
+                    self.texts = []
+                    self.div_depth = 0
+                    self.in_a = False
+            if self.in_row:
+                if tag == "div":
+                    qa = attrs.get("data-qa", "")
+                    if qa:
+                        self.subject = qa
+                    self.div_depth += 1
+                if tag == "small":
+                    self.in_small = True
+                    self.current_text = ""
+                if tag == "a" and "no-scroll" in attrs.get("class", ""):
+                    self.in_a = True
+                    self.texts = []
 
         def handle_endtag(self, tag):
-            if tag == "li" and self.in_row:
-                self.in_row = False
-                if self.current_id:
+            if self.in_row:
+                if tag == "small" and self.in_small:
+                    self.date = self.current_text.strip()
+                    self.in_small = False
+                if tag == "div":
+                    self.div_depth -= 1
+                if tag == "a" and self.in_a:
+                    self.in_a = False
+                if tag == "li":
+                    self.in_row = False
+                    sender = self.texts[0] if len(self.texts) > 0 else "Ukendt"
+                    preview = self.texts[1] if len(self.texts) > 1 else ""
                     messages.append({
                         "id":      self.current_id,
-                        "sender":  self.sender or "Ukendt",
+                        "sender":  sender,
                         "subject": self.subject or "(intet emne)",
                         "date":    self.date or "Ukendt dato",
+                        "preview": preview,
                     })
-            if self.in_row and tag == "small" and self.in_date:
-                self.date = getattr(self, "current_text", "").strip()
-                self.in_date = False
 
         def handle_data(self, data):
-            if self.in_row and self.in_date:
-                self.current_text = getattr(self, "current_text", "") + data
-            if self.in_row and self.sender is None and data.strip():
-                self.sender = data.strip()
+            if self.in_row and self.in_small:
+                self.current_text += data
+            if self.in_row and self.in_a and data.strip():
+                self.texts.append(data.strip())
 
     parser = MessageParser()
     parser.feed(r.text)
