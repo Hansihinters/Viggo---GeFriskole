@@ -77,17 +77,40 @@ def fetch_message_body(session, message_id):
     )
     r.raise_for_status()
 
-    # Find mid_ sektionen
-    html = r.text
-    idx = html.find(f'id="mid_{message_id}"')
-    if idx >= 0:
-        print("=== MID SEKTION ===")
-        print(html[idx:idx+2000])
-    else:
-        print("=== mid_ ikke fundet, printer slutning ===")
-        print(html[3000:6000])
+    class BodyParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.in_p_div = False
+            self.in_p = False
+            self.lines = []
+            self.current = ""
 
-    return "(debug)"
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == "div" and "p" in attrs.get("class", "").split():
+                self.in_p_div = True
+            if self.in_p_div and tag == "p":
+                self.in_p = True
+                self.current = ""
+            if self.in_p and tag == "br":
+                self.lines.append(self.current.strip())
+                self.current = ""
+
+        def handle_endtag(self, tag):
+            if self.in_p and tag == "p":
+                if self.current.strip():
+                    self.lines.append(self.current.strip())
+                self.in_p = False
+            if self.in_p_div and tag == "div":
+                self.in_p_div = False
+
+        def handle_data(self, data):
+            if self.in_p:
+                self.current += data
+
+    parser = BodyParser()
+    parser.feed(r.text)
+    return "\n".join(parser.lines) if parser.lines else "(kunne ikke hente beskedtekst)"
 
 
 def scrape_inbox(session):
