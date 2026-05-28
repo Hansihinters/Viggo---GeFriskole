@@ -73,6 +73,9 @@ def scrape_inbox(session):
     r = session.get(f"{VIGGO_BASE}/Basic/Message/Inbox")
     r.raise_for_status()
 
+    # DEBUG
+    print(r.text[:3000])
+
     messages = []
 
     class InboxParser(HTMLParser):
