@@ -4,6 +4,7 @@ import smtplib
 import requests
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from html.parser import HTMLParser
 
 VIGGO_BASE     = "https://gefriskole.viggo.dk"
 GMAIL_SENDER   = os.environ["GMAIL_SENDER"]
@@ -68,62 +69,57 @@ def get_session():
 
 
 def scrape_inbox(session):
-    from html.parser import HTMLParser
-
-    r = session.get(f"{VIGGO_BASE}/Basic/Message/Inbox")
+    r = session.post(
+        f"{VIGGO_BASE}/Basic/Message/Folder/7/?ajax=2",
+        data={"searchText": "", "orderby": "recievedDESC"},
+        headers={"X-Requested-With": "XMLHttpRequest"},
+    )
     r.raise_for_status()
 
-    # DEBUG - prøv API endpoint
-    r2 = session.get(f"{VIGGO_BASE}/Basic/Message/Inbox", headers={"Accept": "application/json, text/javascript, */*"})
-    print("API STATUS:", r2.status_code)
-    print("API CONTENT-TYPE:", r2.headers.get("content-type"))
-    print("API SVAR:", r2.text[:2000])
+    print("DEBUG:", r.text[:2000])
 
     messages = []
 
-    class InboxParser(HTMLParser):
+    class MessageParser(HTMLParser):
         def __init__(self):
             super().__init__()
             self.in_row = False
-            self.current_row_id = None
+            self.current_id = None
             self.cells = []
             self.current_cell = None
 
         def handle_starttag(self, tag, attrs):
             attrs = dict(attrs)
-            if tag == "tr":
-                row_id = attrs.get("data-id") or attrs.get("id") or ""
-                if row_id or "message" in attrs.get("class", "").lower():
+            if tag == "li":
+                data_id = attrs.get("data-id", "")
+                if data_id:
                     self.in_row = True
-                    self.current_row_id = row_id
+                    self.current_id = data_id
                     self.cells = []
-            if self.in_row and tag == "td":
+            if self.in_row and tag in ("span", "div", "a"):
                 self.current_cell = ""
 
         def handle_endtag(self, tag):
-            if self.in_row and tag == "td" and self.current_cell is not None:
-                self.cells.append(self.current_cell.strip())
+            if self.in_row and tag in ("span", "div", "a") and self.current_cell is not None:
+                text = self.current_cell.strip()
+                if text:
+                    self.cells.append(text)
                 self.current_cell = None
-            if tag == "tr" and self.in_row:
+            if tag == "li" and self.in_row:
                 self.in_row = False
-                if len(self.cells) >= 2:
-                    msg_id  = self.current_row_id or self.cells[1]
-                    sender  = self.cells[0] if len(self.cells) > 0 else "Ukendt"
-                    subject = self.cells[1] if len(self.cells) > 1 else "(intet emne)"
-                    date    = self.cells[2] if len(self.cells) > 2 else "Ukendt dato"
-                    if msg_id or subject:
-                        messages.append({
-                            "id":      msg_id,
-                            "sender":  sender,
-                            "subject": subject,
-                            "date":    date,
-                        })
+                if self.current_id and self.cells:
+                    messages.append({
+                        "id":      self.current_id,
+                        "sender":  self.cells[0] if len(self.cells) > 0 else "Ukendt",
+                        "subject": self.cells[1] if len(self.cells) > 1 else "(intet emne)",
+                        "date":    self.cells[2] if len(self.cells) > 2 else "Ukendt dato",
+                    })
 
         def handle_data(self, data):
             if self.current_cell is not None:
                 self.current_cell += data
 
-    parser = InboxParser()
+    parser = MessageParser()
     parser.feed(r.text)
     return messages
 
