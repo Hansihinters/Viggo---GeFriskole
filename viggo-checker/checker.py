@@ -76,8 +76,17 @@ def fetch_message_body(session, message_id):
         headers={"X-Requested-With": "XMLHttpRequest"},
     )
     r.raise_for_status()
-    print("=== BESKED HTML ===")
-    print(r.text[:3000])
+
+    # Find mid_ sektionen
+    html = r.text
+    idx = html.find(f'id="mid_{message_id}"')
+    if idx >= 0:
+        print("=== MID SEKTION ===")
+        print(html[idx:idx+2000])
+    else:
+        print("=== mid_ ikke fundet, printer slutning ===")
+        print(html[3000:6000])
+
     return "(debug)"
 
 
