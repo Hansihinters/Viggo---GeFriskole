@@ -76,37 +76,9 @@ def fetch_message_body(session, message_id):
         headers={"X-Requested-With": "XMLHttpRequest"},
     )
     r.raise_for_status()
-
-    class BodyParser(HTMLParser):
-        def __init__(self):
-            super().__init__()
-            self.in_body = False
-            self.texts = []
-            self.current = ""
-
-        def handle_starttag(self, tag, attrs):
-            attrs = dict(attrs)
-            classes = attrs.get("class", "")
-            if tag == "div" and "message-body" in classes:
-                self.in_body = True
-            if tag in ("br", "p") and self.in_body:
-                if self.current.strip():
-                    self.texts.append(self.current.strip())
-                self.current = ""
-
-        def handle_endtag(self, tag):
-            if tag == "div" and self.in_body:
-                if self.current.strip():
-                    self.texts.append(self.current.strip())
-                self.in_body = False
-
-        def handle_data(self, data):
-            if self.in_body:
-                self.current += data
-
-    parser = BodyParser()
-    parser.feed(r.text)
-    return "\n".join(parser.texts) if parser.texts else "(kunne ikke hente beskedtekst)"
+    print("=== BESKED HTML ===")
+    print(r.text[:3000])
+    return "(debug)"
 
 
 def scrape_inbox(session):
