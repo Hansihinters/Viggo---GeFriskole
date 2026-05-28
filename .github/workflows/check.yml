@@ -30,9 +30,10 @@ jobs:
 
       - name: Kør checker
         env:
-          VIGGO_USERNAME:      ${{ secrets.VIGGO_USERNAME }}
-          VIGGO_PASSWORD:      ${{ secrets.VIGGO_PASSWORD }}
-          GMAIL_SENDER:        ${{ secrets.GMAIL_SENDER }}
-          GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
-          GMAIL_RECEIVER:      ${{ secrets.GMAIL_RECEIVER }}
+  VIGGO_USERNAME:      ${{ secrets.VIGGO_USERNAME }}
+  VIGGO_PASSWORD:      ${{ secrets.VIGGO_PASSWORD }}
+  GMAIL_SENDER:        ${{ secrets.GMAIL_SENDER }}
+  GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
+  GMAIL_RECEIVER:      ${{ secrets.GMAIL_RECEIVER }}
+  VIGGO_COOKIES:       ${{ secrets.VIGGO_COOKIES }}
         run: python viggo-checker/checker.py
