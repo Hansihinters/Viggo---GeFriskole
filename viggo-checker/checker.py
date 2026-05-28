@@ -86,11 +86,11 @@ def scrape_inbox(session):
             self.current_id = None
             self.subject = None
             self.date = None
+            self.sender = None
             self.preview = None
-            self.in_small = False
             self.in_a = False
-            self.div_depth = 0
-            self.texts = []
+            self.in_small = False
+            self.div_count = 0
             self.current_text = ""
 
         def handle_starttag(self, tag, attrs):
@@ -102,49 +102,55 @@ def scrape_inbox(session):
                     self.current_id = drag_id
                     self.subject = None
                     self.date = None
+                    self.sender = None
                     self.preview = None
-                    self.texts = []
-                    self.div_depth = 0
                     self.in_a = False
+                    self.div_count = 0
             if self.in_row:
                 if tag == "div":
                     qa = attrs.get("data-qa", "")
                     if qa:
                         self.subject = qa
-                    self.div_depth += 1
-                if tag == "small":
-                    self.in_small = True
+                    self.div_count += 1
                     self.current_text = ""
                 if tag == "a" and "no-scroll" in attrs.get("class", ""):
                     self.in_a = True
-                    self.texts = []
+                    self.div_count = 0
+                if tag == "small" and self.in_a:
+                    self.in_small = True
+                    self.current_text = ""
 
         def handle_endtag(self, tag):
             if self.in_row:
                 if tag == "small" and self.in_small:
                     self.date = self.current_text.strip()
                     self.in_small = False
-                if tag == "div":
-                    self.div_depth -= 1
+                if tag == "div" and self.in_a:
+                    text = self.current_text.strip()
+                    self.div_count += 1
+                    # div 2 = afsender, div 4 = preview
+                    if self.div_count == 2 and text and not self.sender:
+                        self.sender = text
+                    elif self.div_count == 4 and text and not self.preview:
+                        self.preview = text
+                    self.current_text = ""
                 if tag == "a" and self.in_a:
                     self.in_a = False
-                if tag == "li":
+                if tag == "li" and self.in_row:
                     self.in_row = False
-                    sender = self.texts[0] if len(self.texts) > 0 else "Ukendt"
-                    preview = self.texts[1] if len(self.texts) > 1 else ""
                     messages.append({
                         "id":      self.current_id,
-                        "sender":  sender,
+                        "sender":  self.sender or "Ukendt",
                         "subject": self.subject or "(intet emne)",
                         "date":    self.date or "Ukendt dato",
-                        "preview": preview,
+                        "preview": self.preview or "",
                     })
 
         def handle_data(self, data):
             if self.in_row and self.in_small:
                 self.current_text += data
-            if self.in_row and self.in_a and data.strip():
-                self.texts.append(data.strip())
+            elif self.in_row and self.in_a and not self.in_small:
+                self.current_text += data
 
     parser = MessageParser()
     parser.feed(r.text)
@@ -159,7 +165,7 @@ def main():
     print(f"Fandt {len(all_messages)} beskeder i alt")
 
     for m in all_messages:
-        print(f"  ID:{m['id']} Fra:{m['sender']} Emne:{m['subject']} Dato:{m['date']}")
+        print(f"  ID:{m['id']} Fra:{m['sender']} Emne:{m['subject']} Dato:{m['date']} Preview:{m['preview']}")
 
     new_messages = [m for m in all_messages if m["id"] not in seen]
 
