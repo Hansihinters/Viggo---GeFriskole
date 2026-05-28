@@ -76,8 +76,6 @@ def scrape_inbox(session):
     )
     r.raise_for_status()
 
-    print("DEBUG:", r.text[:2000])
-
     messages = []
 
     class MessageParser(HTMLParser):
@@ -85,39 +83,52 @@ def scrape_inbox(session):
             super().__init__()
             self.in_row = False
             self.current_id = None
-            self.cells = []
-            self.current_cell = None
+            self.sender = None
+            self.date = None
+            self.subject = None
+            self.in_sender = False
+            self.in_date = False
 
         def handle_starttag(self, tag, attrs):
             attrs = dict(attrs)
             if tag == "li":
-                data_id = attrs.get("data-id", "")
-                if data_id:
+                drag_id = attrs.get("data-drag-id", "")
+                if drag_id:
                     self.in_row = True
-                    self.current_id = data_id
-                    self.cells = []
-            if self.in_row and tag in ("span", "div", "a"):
-                self.current_cell = ""
+                    self.current_id = drag_id
+                    self.sender = None
+                    self.date = None
+                    self.subject = attrs.get("data-qa", "")
+            if self.in_row and tag == "div":
+                self.in_sender = True
+                self.current_text = ""
+            if self.in_row and tag == "small":
+                self.in_date = True
+                self.current_text = ""
+            if self.in_row and tag == "div":
+                qa = attrs.get("data-qa", "")
+                if qa:
+                    self.subject = qa
 
         def handle_endtag(self, tag):
-            if self.in_row and tag in ("span", "div", "a") and self.current_cell is not None:
-                text = self.current_cell.strip()
-                if text:
-                    self.cells.append(text)
-                self.current_cell = None
             if tag == "li" and self.in_row:
                 self.in_row = False
-                if self.current_id and self.cells:
+                if self.current_id:
                     messages.append({
                         "id":      self.current_id,
-                        "sender":  self.cells[0] if len(self.cells) > 0 else "Ukendt",
-                        "subject": self.cells[1] if len(self.cells) > 1 else "(intet emne)",
-                        "date":    self.cells[2] if len(self.cells) > 2 else "Ukendt dato",
+                        "sender":  self.sender or "Ukendt",
+                        "subject": self.subject or "(intet emne)",
+                        "date":    self.date or "Ukendt dato",
                     })
+            if self.in_row and tag == "small" and self.in_date:
+                self.date = getattr(self, "current_text", "").strip()
+                self.in_date = False
 
         def handle_data(self, data):
-            if self.current_cell is not None:
-                self.current_cell += data
+            if self.in_row and self.in_date:
+                self.current_text = getattr(self, "current_text", "") + data
+            if self.in_row and self.sender is None and data.strip():
+                self.sender = data.strip()
 
     parser = MessageParser()
     parser.feed(r.text)
@@ -130,6 +141,9 @@ def main():
     session = get_session()
     all_messages = scrape_inbox(session)
     print(f"Fandt {len(all_messages)} beskeder i alt")
+
+    for m in all_messages:
+        print(f"  ID:{m['id']} Fra:{m['sender']} Emne:{m['subject']} Dato:{m['date']}")
 
     new_messages = [m for m in all_messages if m["id"] not in seen]
 
