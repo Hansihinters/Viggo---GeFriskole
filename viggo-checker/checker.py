@@ -6,8 +6,6 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 VIGGO_BASE     = "https://gefriskole.viggo.dk"
-VIGGO_USERNAME = os.environ["VIGGO_USERNAME"]
-VIGGO_PASSWORD = os.environ["VIGGO_PASSWORD"]
 GMAIL_SENDER   = os.environ["GMAIL_SENDER"]
 GMAIL_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 GMAIL_RECEIVER = os.environ["GMAIL_RECEIVER"]
@@ -51,34 +49,21 @@ def get_session():
     session = requests.Session()
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     })
 
-    r = session.get(f"{VIGGO_BASE}/Basic/Account/Login")
-    r.raise_for_status()
+    raw = os.environ.get("VIGGO_COOKIES")
+    if not raw:
+        raise Exception("VIGGO_COOKIES secret mangler")
 
-    token = ""
-    for line in r.text.splitlines():
-        if "__RequestVerificationToken" in line and 'value="' in line:
-            token = line.split('value="')[1].split('"')[0]
-            break
+    cookies = json.loads(raw)
+    for c in cookies:
+        session.cookies.set(c["name"], c["value"], domain=c.get("domain"), path=c.get("path"))
 
-    payload = {
-        "UserName": VIGGO_USERNAME,
-        "Password": VIGGO_PASSWORD,
-        "returnUrl": "",
-        "__RequestVerificationToken": token,
-    }
-    r2 = session.post(
-        f"{VIGGO_BASE}/Basic/Account/Login",
-        data=payload,
-        allow_redirects=True,
-    )
+    r = session.get(f"{VIGGO_BASE}/Basic/Message/Inbox")
+    if "/Account/Login" in r.url:
+        raise Exception("Session udløbet — kør save_cookies.py igen og opdater VIGGO_COOKIES secret")
 
-    if "/Account/Login" in r2.url:
-        raise Exception("Login fejlede — tjek VIGGO_USERNAME og VIGGO_PASSWORD i GitHub Secrets")
-
-    print(f"Login OK — landet på: {r2.url}")
+    print(f"Session OK — landet på: {r.url}")
     return session
 
 
