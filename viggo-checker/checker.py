@@ -32,7 +32,8 @@ def send_mail(messages):
         body_lines.append(f"  Fra: {m['sender']}")
         body_lines.append(f"  Emne: {m['subject']}")
         body_lines.append(f"  Dato: {m['date']}")
-        body_lines.append(f"  Besked: {m['preview']}\n")
+        body_lines.append(f"  Besked:\n{m['body']}")
+        body_lines.append("")
     body_lines.append(f"\nLæs dem her: {VIGGO_BASE}/Basic/Message/Inbox")
 
     msg = MIMEMultipart()
@@ -67,6 +68,45 @@ def get_session():
 
     print(f"Session OK — landet på: {r.url}")
     return session
+
+
+def fetch_message_body(session, message_id):
+    r = session.get(
+        f"{VIGGO_BASE}/Basic/Message/Details/7/{message_id}/?ajax=1",
+        headers={"X-Requested-With": "XMLHttpRequest"},
+    )
+    r.raise_for_status()
+
+    class BodyParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.in_body = False
+            self.texts = []
+            self.current = ""
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            classes = attrs.get("class", "")
+            if tag == "div" and "message-body" in classes:
+                self.in_body = True
+            if tag in ("br", "p") and self.in_body:
+                if self.current.strip():
+                    self.texts.append(self.current.strip())
+                self.current = ""
+
+        def handle_endtag(self, tag):
+            if tag == "div" and self.in_body:
+                if self.current.strip():
+                    self.texts.append(self.current.strip())
+                self.in_body = False
+
+        def handle_data(self, data):
+            if self.in_body:
+                self.current += data
+
+    parser = BodyParser()
+    parser.feed(r.text)
+    return "\n".join(parser.texts) if parser.texts else "(kunne ikke hente beskedtekst)"
 
 
 def scrape_inbox(session):
@@ -125,15 +165,12 @@ def scrape_inbox(session):
                     self.in_a = False
                 if tag == "li":
                     self.in_row = False
-                    print(f"  DEBUG texts: {self.texts}")
                     sender = self.texts[0] if len(self.texts) > 0 else "Ukendt"
-                    preview = self.texts[-1] if len(self.texts) > 1 else ""
                     messages.append({
                         "id":      self.current_id,
                         "sender":  sender,
                         "subject": self.subject or "(intet emne)",
                         "date":    self.date or "Ukendt dato",
-                        "preview": preview,
                     })
 
         def handle_data(self, data):
@@ -154,13 +191,13 @@ def main():
     all_messages = scrape_inbox(session)
     print(f"Fandt {len(all_messages)} beskeder i alt")
 
-    for m in all_messages:
-        print(f"  ID:{m['id']} Fra:{m['sender']} Emne:{m['subject']} Dato:{m['date']} Preview:{m['preview']}")
-
     new_messages = [m for m in all_messages if m["id"] not in seen]
 
     if new_messages:
-        print(f"{len(new_messages)} nye — sender mail...")
+        print(f"{len(new_messages)} nye — henter beskedtekster...")
+        for m in new_messages:
+            m["body"] = fetch_message_body(session, m["id"])
+            print(f"  ID:{m['id']} Fra:{m['sender']} Emne:{m['subject']}")
         send_mail(new_messages)
         seen.update(m["id"] for m in new_messages)
         save_seen(seen)
