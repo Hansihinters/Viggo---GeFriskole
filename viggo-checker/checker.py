@@ -29,12 +29,11 @@ def send_mail(messages):
     subject = f"Ny besked på Viggo ({len(messages)} stk)"
     body_lines = ["Du har følgende nye beskeder på Viggo:\n"]
     for m in messages:
-        body_lines.append(f"  Fra: {m['sender']}")
-        body_lines.append(f"  Emne: {m['subject']}")
-        body_lines.append(f"  Dato: {m['date']}")
-        body_lines.append(f"  Besked:\n{m['body']}")
-        body_lines.append("")
-    body_lines.append(f"\nLæs dem her: {VIGGO_BASE}/Basic/Message/Inbox")
+        body_lines.append(f"Fra: {m['sender']}")
+        body_lines.append(f"Emne: {m['subject']}")
+        body_lines.append(f"Dato: {m['date']}")
+        body_lines.append(f"\n{m['body']}\n")
+        body_lines.append("-" * 40)
 
     msg = MIMEMultipart()
     msg["From"]    = GMAIL_SENDER
