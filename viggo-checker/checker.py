@@ -73,16 +73,11 @@ def scrape_inbox(session):
     r = session.get(f"{VIGGO_BASE}/Basic/Message/Inbox")
     r.raise_for_status()
 
-    # DEBUG
-    html = r.text
-    idx = html.lower().find("inbox")
-    if idx > 0:
-        print("=== INBOX SEKTION ===")
-        print(html[idx:idx+2000])
-    else:
-        print("=== INGEN INBOX FUNDET - printer midten ===")
-        mid = len(html) // 2
-        print(html[mid:mid+2000])
+    # DEBUG - prøv API endpoint
+    r2 = session.get(f"{VIGGO_BASE}/Basic/Message/Inbox", headers={"Accept": "application/json, text/javascript, */*"})
+    print("API STATUS:", r2.status_code)
+    print("API CONTENT-TYPE:", r2.headers.get("content-type"))
+    print("API SVAR:", r2.text[:2000])
 
     messages = []
 
